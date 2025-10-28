@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OP_RETURN 01r</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: monospace;
+      background: #000;
+      color: #fff;
+      padding: 20px;
+      overflow-x: hidden;
+      position: relative;
+      min-height: 100vh;
+    }
+
+    #bubbles {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bubble {
+      position: absolute;
+      font-family: monospace;
+      font-size: 20px;
+      color: #fff;
+      opacity: 0.6;
+      animation: float linear infinite;
+    }
+
+    @keyframes float {
+      0% {
+        transform: translateY(100vh) rotate(0deg);
+        opacity: 0;
+      }
+      10% {
+        opacity: 0.6;
+      }
+      90% {
+        opacity: 0.6;
+      }
+      100% {
+        transform: translateY(-100px) rotate(360deg);
+        opacity: 0;
+      }
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    #inputSection {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    input {
+      flex: 1;
+      padding: 10px;
+      background: #000;
+      border: 1px solid #fff;
+      color: #fff;
+      font-family: monospace;
+    }
+
+    button {
+      padding: 10px 20px;
+      background: #fff;
+      color: #000;
+      border: none;
+      cursor: pointer;
+      font-family: monospace;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 30px;
+      display: none;
+    }
+
+    .result.show {
+      display: block;
+    }
+
+    .binary {
+      word-break: break-all;
+      line-height: 1.8;
+      margin-top: 20px;
+    }
+
+    .error {
+      color: #fff;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="bubbles"></div>
+  
+  <div class="container">
+    <div id="inputSection">
+      <input 
+        type="text" 
+        id="txidInput" 
+        placeholder="Transaction ID"
+        autocomplete="off"
+      >
+      <button id="fetchButton">OP_RETURN</button>
+    </div>
+    <div class="result" id="resultSection"></div>
+  </div>
+
+  <script>
+    const txidInput = document.getElementById('txidInput');
+    const fetchButton = document.getElementById('fetchButton');
+    const resultSection = document.getElementById('resultSection');
+    const bubblesContainer = document.getElementById('bubbles');
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlTxid = urlParams.get('txid');
+    if (urlTxid) {
+      txidInput.value = urlTxid;
+      fetchButton.click();
+    }
+
+    fetchButton.addEventListener('click', async () => {
+      const txid = txidInput.value.trim();
+      if (!txid) {
+        alert('Please enter a transaction ID');
+        return;
+      }
+      if (!/^[a-f0-9]{64}$/i.test(txid)) {
+        alert('Invalid transaction ID format');
+        return;
+      }
+      fetchButton.disabled = true;
+      fetchButton.textContent = 'Loading...';
+      resultSection.innerHTML = '<p>Loading...</p>';
+      resultSection.classList.add('show');
+      
+      try {
+        const response = await fetch(`https://mempool.space/api/tx/${txid}`);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch transaction: ${response.status}`);
+        }
+        const data = await response.json();
+        const opReturnOutputs = data.vout.filter(output => 
+          output.scriptpubkey_asm && output.scriptpubkey_asm.includes('OP_RETURN')
+        );
+        if (opReturnOutputs.length === 0) {
+          resultSection.innerHTML = `<div class="error">404 OP_RETURN NOT FOUND</div>`;
+          return;
+        }
+        const binaryResults = opReturnOutputs.map((output) => {
+          const hex = output.scriptpubkey;
+          
+          const opReturnIndex = hex.indexOf('6a');
+          let dataHex = '';
+          
+          if (opReturnIndex !== -1) {
+            let remaining = hex.substring(opReturnIndex + 2);
+            
+            if (remaining.startsWith('4c')) {
+              dataHex = remaining.substring(4);
+            } else if (remaining.startsWith('4d')) {
+              dataHex = remaining.substring(6);
+            } else if (remaining.startsWith('4e')) {
+              dataHex = remaining.substring(10);
+            } else {
+              dataHex = remaining.substring(2);
+            }
+          }
+          return hexToBinary(dataHex);
+        });
+        
+        const binaryString = binaryResults.join('');
+        resultSection.innerHTML = `<div class="binary">${binaryString}</div>`;
+
+        createBubbles(binaryString);
+        
+      } catch (error) {
+        resultSection.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      } finally {
+        fetchButton.disabled = false;
+        fetchButton.textContent = 'OP_RETURN';
+      }
+    });
+    
+    function hexToBinary(hex) {
+      let binary = '';
+      for (let i = 0; i < hex.length; i += 2) {
+        const byte = hex.substr(i, 2);
+        const decimal = parseInt(byte, 16);
+        binary += decimal.toString(2).padStart(8, '0');
+      }
+      return binary;
+    }
+    
+    function createBubbles(binaryString) {
+      bubblesContainer.innerHTML = '';
+      
+      const numBubbles = Math.min(binaryString.length, 100000);
+      
+      for (let i = 0; i < numBubbles; i++) {
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.textContent = binaryString[i % binaryString.length];
+
+        bubble.style.left = Math.random() * 100 + '%';
+
+        const duration = 10 + Math.random() * 15;
+        bubble.style.animationDuration = duration + 's';
+        
+        bubble.style.animationDelay = Math.random() * 5 + 's';
+
+        const size = 15 + Math.random() * 20;
+        bubble.style.fontSize = size + 'px';
+        
+        bubblesContainer.appendChild(bubble);
+      }
+    }
+    
+    txidInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        fetchButton.click();
+      }
+    });
+  </script>
+</body>
+</html>
