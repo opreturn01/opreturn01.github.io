@@ -193,7 +193,8 @@
         });
         
         const binaryString = binaryResults.join('');
-        resultSection.innerHTML = `<div class="binary">${binaryString}</div>`;
+        const groupedBinary = binaryString.match(/.{1,4}/g).join(' ');
+        resultSection.innerHTML = `<div class="binary">${groupedBinary}</div>`;
 
         createBubbles(binaryString);
         
